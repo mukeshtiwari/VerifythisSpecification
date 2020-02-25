@@ -61,7 +61,7 @@ upload (key : Key) :=
   Forall fingerprint key' uploaded', fingerprint = key.fingerprint -> 
   (In key.fingerprint (dom keys) -> 
         keys (key.fingerprint) = key  /\ Exists (token : UToken), 
-        fresh t  /\ keys' = keys [t := key.fingerprint]  /\
+        fresh token  /\ keys' = keys [fingerprint := key]  /\
         uploaded' = uploaded [token := key.fingerprint]) /\
   (~In key.fingerprint (dom keys) -> keys' = key /\ uploaded' = uploaded)  
          
