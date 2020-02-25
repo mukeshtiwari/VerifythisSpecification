@@ -78,7 +78,7 @@ uploadBunch (identites : Identity set)
                   f (pending [(f h) := (fingerprint, h)])
 
 requestVerify (from : UToken) (identities : Identity set) := 
-  Forall pending pending',
+  Forall pending',
   (In from (dom uploaded) -> 
       Forall fingerprint key, fingerprint = uploaded from -> 
         key = keys fingerprint -> 
