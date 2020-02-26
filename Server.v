@@ -127,13 +127,13 @@ Section Server.
      (Hkeydec : forall x y : Key, {x = y} + {x <> y}).
      
     
-
+   (* 
    Variables 
      (keys keys' : Fingerprint -> Key)
      (upload upload' : UToken -> Fingerprint)
      (pending pending' : VToken -> (Fingerprint * Identity)%type)
      (confirmed confirmed' : Identity -> Fingerprint)
-     (managed managed' : MToken -> Fingerprint).
+     (managed managed' : MToken -> Fingerprint). 
    
 
 
@@ -142,23 +142,62 @@ Section Server.
    Definition byFingerprint (fingerprint : Fingerprint) : option Key :=
      get _ _ Hfindec fingerprint (fun_to_list Fingerprint Key
                                               finlist keylist Hfinfin Hkeyfin Hfindec
-                                              Hkeydec keys).
+                                              Hkeydec keys). *)
 
    Variable freshtoken : forall {A : Type}, A -> Prop. 
 
    Variable update : forall {A B : Type}, 
      A -> B -> (A -> B) -> (A -> B).
-     
-   (* If upload would have been implemented in Coq, then this would be a 
-      theorem based on the definitions of upload *)
-   Definition upload_correctness (key : Key) (token : UToken) : Prop :=
-     match contains Fingerprint Key Hfindec (fingerprint key)
-                    (fun_to_list _ _ finlist keylist Hfinfin Hkeyfin Hfindec Hkeydec keys) with
-     | false => upload' = upload /\ keys = keys'
-     | true =>  keys (fingerprint key) = key /\ keys' = update (fingerprint key) key keys
-               /\ upload' = update token (fingerprint key) upload /\ freshtoken token
-     end.
+
+   (* Wrapping different maps in one record *)
+   Record State : Type :=
+     mkState {
+         keys : Fingerprint -> Key;
+         upload : UToken -> Fingerprint;
+         pending : VToken -> Fingerprint * Identity;
+         confirmed : Identity -> Fingerprint;
+         managed : MToken -> Fingerprint}. 
+         
+
+   
+   Definition upload_state (key : Key) (fstate sstate : State) : Prop :=
+      match contains Fingerprint Key Hfindec (fingerprint key)
+                    (fun_to_list _ _ finlist keylist Hfinfin Hkeyfin Hfindec Hkeydec (keys fstate)) with
+     | false => (upload sstate = upload fstate) /\ (keys sstate = keys fstate)
+     | true =>  exists (token : UToken), freshtoken token /\
+               (keys fstate) (fingerprint key) = key /\
+               (keys sstate = update (fingerprint key) key (keys fstate))
+               /\ (upload sstate = update token (fingerprint key) (upload fstate))
+      end.
+
+
+   (* Am I thinking right? The question that is bothering me is: how are 
+      the two states, fstate and sstate, are related in the beginning of 
+      execution of upload? My hypothesis is they should be same, or 
+      am I misinterpreting the relational style, or I don't have the 
+      enough understanding to ask even meaningful questions? *)
+   
+   Definition upload_precond_In (key : Key) (fstate sstate : State) :=
+     In (fingerprint key)
+        (dom _ _ (fun_to_list _ _ finlist keylist Hfinfin Hkeyfin Hfindec Hkeydec (keys fstate))).
+   
+   Definition upload_postcond_In (key : Key) (fstate sstate : State) :=
+     exists (token : UToken), freshtoken token /\ (keys fstate) (fingerprint key) = key /\
+     (keys sstate = update (fingerprint key) key (keys fstate))
+     /\ (upload sstate = update token (fingerprint key) (upload fstate)).
+
+   Definition upload_precond_notIn (key : Key) (fstate sstate : State) :=
+     ~In (fingerprint key)
+      (dom _ _ (fun_to_list _ _ finlist keylist Hfinfin Hkeyfin Hfindec Hkeydec (keys fstate))).
+   
+   Definition upload_postcond_notIn (key : Key) (fstate sstate : State) :=
+     (upload sstate = upload fstate) /\ (keys sstate = keys fstate).
+
+
+   Definition upload_combined_cond (key : Key) (fstate sstate : State) :=
+     (upload_precond_In    key fstate sstate -> upload_postcond_In    key fstate sstate) /\
+     (upload_precond_notIn key fstate sstate -> upload_postcond_notIn key fstate sstate). 
    
    
    
-   
+   Definition requestVerify_procond_In (
