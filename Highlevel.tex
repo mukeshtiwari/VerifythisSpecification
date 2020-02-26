@@ -58,48 +58,35 @@ byKeyId (keyId : KeyId) :=
 
 
 upload (key : Key) := 
-  Forall fingerprint key' uploaded', fingerprint = key.fingerprint -> 
+  Forall fingerprint, fingerprint = key.fingerprint -> 
   (In key.fingerprint (dom keys) -> 
         keys (key.fingerprint) = key  /\ Exists (token : UToken), 
         fresh token  /\ keys' = keys [fingerprint := key]  /\
         uploaded' = uploaded [token := key.fingerprint]) /\
   (~In key.fingerprint (dom keys) -> keys' = key /\ uploaded' = uploaded)  
          
-              
-This function mimics the for loop of requestVerify function.
-uploadBunch (identites : Identity set) 
-  (fingerprint : Fingerprint) (f : Identity -> VToken)  
-  (pending : VToken -> (Fingerprint, Identity)) := 
-  match identities with
-  | [] => pending
-  | h :: identities' => 
-      fresh (f h) /\ 
-      uploadBunch identities' fingerprint 
-                  f (pending [(f h) := (fingerprint, h)])
-
-requestVerify (from : UToken) (identities : Identity set) := 
-  Forall pending',
+        
+requestVerify (from : UToken) (identities : Identity set) :=
   (In from (dom uploaded) -> 
       Forall fingerprint key, fingerprint = uploaded from -> 
         key = keys fingerprint -> 
-        (Subset identiteis key.identities -> Exists (f : Identity -> VToken), 
-           pending' = uploadBunch identities fingerprint f pending) /\
+        (Subset identities key.identities -> Exists (f : Identity -> VToken), 
+           injective f /\ pending' =   pending 
+           \Union {(f h, (fingerprint, h)) | h \In identities}) /\
         (~Subset s key.identities -> pending' = pending)) /\
  (~In from (dom uploaded) -> pending' = pending)
 
 
 
-verify (token : VToken) := 
-  Forall pending' confirmed', 
+verify (token : VToken) :=
   (In token (dom pending) -> Forall fingerprint identity,
        (fingerprint, identity) = pending token -> 
-           pending'   = deleteToken pending token /\        
+           pending'   = pending - token /\        
            confirmed' = confirmed [identity := fingerprint]) /\
   (~In token (dom pending) -> pending' = pending /\ confirmed' = confirmed)
 
 
 requestManage (id : Identity) :=
-  Forall managed', 
   (In id (dom managed) -> Exists fingerprint token, 
          fresh token /\  fingerprint = confirmed id /\
          managed' = managed [token := fingerprint]) /\
@@ -118,7 +105,7 @@ revoke (token : MToken) (identities : Identity set) :=
   (In token (dom managed) ->  Forall fingerprint key,  
     fingerprint = managed token -> key = keys fingerprint -> 
      ( Subset identities key.identities ->  
-            confirmed' = dubMinus confirmed identities) /\
+            confirmed' = confirmed -- identities) /\
      (~Subset identities key.identities -> 
             confirmed' = confirmed)) /\
   (~In token (dom managed) -> confirmed' = confirmed)
