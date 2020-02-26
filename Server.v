@@ -53,8 +53,13 @@ Section Abstractmap.
   Theorem get_and_contains_true :
      forall k maps v, get k maps = Some v <-> contains k maps = true.
   Proof.
-  Admitted.
-
+    intros ? ? ?.  split; intro H.
+    generalize dependent maps.
+    induction maps.
+    + cbn. intro. congruence.
+    + cbn. Admitted.
+  
+      
   Theorem get_and_contains_false :
     forall k maps, get k maps = None <-> contains k maps = false. 
   Admitted.
@@ -124,11 +129,11 @@ Section Server.
     
 
    Variables 
-     (keys : Fingerprint -> Key)
-     (uploaded : UToken -> Fingerprint)
-     (pending : VToken -> (Fingerprint * Identity)%type)
-     (confirmed : Identity -> Fingerprint)
-     (managed : MToken -> Fingerprint).
+     (keys keys' : Fingerprint -> Key)
+     (upload upload' : UToken -> Fingerprint)
+     (pending pending' : VToken -> (Fingerprint * Identity)%type)
+     (confirmed confirmed' : Identity -> Fingerprint)
+     (managed managed' : MToken -> Fingerprint).
    
 
 
@@ -139,14 +144,21 @@ Section Server.
                                               finlist keylist Hfinfin Hkeyfin Hfindec
                                               Hkeydec keys).
 
+   Variable freshtoken : forall {A : Type}, A -> Prop. 
 
-
-
-   Definition upload (key : Key) : Prop :=
+   Variable update : forall {A B : Type}, 
+     A -> B -> (A -> B) -> (A -> B).
+     
+   (* If upload would have been implemented in Coq, then this would be a 
+      theorem based on the definitions of upload *)
+   Definition upload_correctness (key : Key) (token : UToken) : Prop :=
      match contains Fingerprint Key Hfindec (fingerprint key)
                     (fun_to_list _ _ finlist keylist Hfinfin Hkeyfin Hfindec Hkeydec keys) with
-     | false => 
-     | true => True
+     | false => upload' = upload /\ keys = keys'
+     | true =>  keys (fingerprint key) = key /\ keys' = update (fingerprint key) key keys
+               /\ upload' = update token (fingerprint key) upload /\ freshtoken token
      end.
+   
+   
    
    
