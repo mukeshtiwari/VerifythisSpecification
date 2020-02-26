@@ -33,11 +33,11 @@ I am slightly confused between \textbf{sealed trait} and
 
 \subsection{Maps as Function Type}
 \begin{verbatim}
-keys : Fingerprint -> Key
-uploaded : UToken -> Fingerprint
-pending : VToken -> (Fingerprint, Identity)
-confirmed : Identity -> Fingerprint
-managed : MToken -> Fingerprint
+keys keys' : Fingerprint -> Key
+uploaded uploaded'  : UToken -> Fingerprint
+pending pending' : VToken -> (Fingerprint, Identity)
+confirmed confirmed' : Identity -> Fingerprint
+managed managed' : MToken -> Fingerprint
 \end{verbatim}
 
 \subsection{Function Definition}
