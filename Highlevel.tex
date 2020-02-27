@@ -87,21 +87,14 @@ verify (token : VToken) :=
 
 
 requestManage (id : Identity) :=
-  (In id (dom managed) -> Exists fingerprint token, 
+  (In id (dom confirmed) -> Exists fingerprint token, 
          fresh token /\  fingerprint = confirmed id /\
          managed' = managed [token := fingerprint]) /\
   (~In id (dom managed) -> managed' = managed)
    
 
-requestManage (id : Identity) :=
-   In id (dom confirmed) -> Exists token, fresh token /\
-   fingerprint = confirmed id /\
-   managed' = managed [token := fingerprint]
-
-
 
 revoke (token : MToken) (identities : Identity set) :=
-  Forall confirmed', 
   (In token (dom managed) ->  Forall fingerprint key,  
     fingerprint = managed token -> key = keys fingerprint -> 
      ( Subset identities key.identities ->  

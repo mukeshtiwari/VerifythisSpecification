@@ -1,4 +1,6 @@
 Require Import Coq.FSets.FMapList.
+Require Import Coq.Lists.ListSet.
+Require Import Coq.Logic.FinFun.
 Require Import List.
 Import ListNotations.
 
@@ -186,18 +188,129 @@ Section Server.
      (keys sstate = update (fingerprint key) key (keys fstate))
      /\ (upload sstate = update token (fingerprint key) (upload fstate)).
 
-   Definition upload_precond_notIn (key : Key) (fstate sstate : State) :=
-     ~In (fingerprint key)
-      (dom _ _ (fun_to_list _ _ finlist keylist Hfinfin Hkeyfin Hfindec Hkeydec (keys fstate))).
-   
-   Definition upload_postcond_notIn (key : Key) (fstate sstate : State) :=
-     (upload sstate = upload fstate) /\ (keys sstate = keys fstate).
-
 
    Definition upload_combined_cond (key : Key) (fstate sstate : State) :=
-     (upload_precond_In    key fstate sstate -> upload_postcond_In    key fstate sstate) /\
-     (upload_precond_notIn key fstate sstate -> upload_postcond_notIn key fstate sstate). 
+     ( upload_precond_In key fstate sstate -> upload_postcond_In key fstate sstate) /\
+     (~upload_precond_In key fstate sstate -> upload sstate = upload fstate
+                                             /\ keys sstate = keys fstate).
    
+
+   (* l1 is subset of l2 *)
+   Definition Subset {A : Type} (l1 l2 : set A) :=
+     forall x, In x l1 -> In x l2.
    
+   (* In requestVerify function, the only state is changing is 
+      pending. It changes when two conditions hold: 
+      1. from token is in uploaded. 
+      2. identities are subset of key.identities where 
+         key = keys(upload(from)). 
+      Otherwise, there is no change in pending *)
    
-   Definition requestVerify_procond_In (
+   Definition requestVerify_precond_In (from : UToken) (idn : set Identity)
+              (fstate sstate : State) :=
+     In from (dom _ _
+                  (fun_to_list
+                     _ _ utolist finlist Hutofin Hfinfin Hutodec Hfindec (upload fstate))) /\
+     Subset idn  ([identities ((keys fstate) ((upload fstate) from))]).
+   
+
+   (* How to union two maps represented as function. One idea is: turn 
+      both them as a list, combine the list and turn the list again back to 
+      function, which, now, represents the union of two maps *)
+
+   Definition Setunion {A B : Type} (f : A -> B) (g : A -> B) := f. (* This is not correct *)
+
+   (* This is for the moment to escapte various implicity definitions *)
+   Definition Listtofun : forall {A B : Type}, list (A * B) ->  (A -> B).
+   Admitted.
+                                                                 
+
+   
+   Definition requestVerify_postcond_In (from : UToken) (idn : set Identity)
+              (fstate sstate : State) :=
+     exists (f : Identity -> VToken),
+       Injective f /\ (pending sstate) = Setunion (pending fstate)
+                                                 (Listtofun (List.map (fun h => (f h, (upload fstate from, h))) idn)).
+
+
+   Definition requestVerifty_combined_cond (from : UToken) (idn : set Identity) (fstate sstate : State) :=
+     ( requestVerify_precond_In from idn fstate sstate -> requestVerify_postcond_In from idn fstate sstate) /\
+     (~requestVerify_precond_In from idn fstate sstate -> (pending sstate) = (pending fstate)).
+                    
+
+   (* list (Fingerprint * Identity) *)
+   Definition ziplist : forall {A B : Type}, list A -> list B -> list (A * B).
+   Admitted.
+
+   (* When two types, A and B, have decidable equality, then their pair also has
+      decidable equality *)
+   Definition zipdec : forall (A B : Type), (forall x y : A * B, {x = y} + {x <> y}).
+   Admitted.
+
+   (* forall v : Fingerprint * Identity, In v (ziplist finlist idelist) *)
+   Definition fintype : forall v : Fingerprint * Identity, In v (ziplist finlist idelist).
+   Admitted.
+   
+   Check fun_to_list.
+   Definition verify_precond_In  (token : VToken) (fstate sstate : State) :=
+     In token (dom _ _
+                   (fun_to_list _ _ vtolist (ziplist finlist idelist) Hvtofin
+                                fintype  Hvtodec (zipdec Fingerprint Identity)  (pending fstate))).
+
+   
+   Definition delete : forall {A B : Type}, (A -> B) -> A -> (A -> B).
+   Admitted.
+   
+   Definition verify_postcond_In (token : VToken) (fstate sstate : State) :=
+     let (fingerprint, identity) := (pending fstate token) in
+     (pending sstate) = delete (pending fstate) token (* delete the token *)
+     /\ (confirmed sstate) = update identity fingerprint (confirmed fstate).
+     
+     
+   Definition verify_combined_cond (token : VToken) (fstate sstate : State) :=
+     ( verify_precond_In token fstate sstate -> verify_postcond_In token fstate sstate) /\
+     (~verify_precond_In token fstate sstate -> (pending sstate = pending fstate) /\
+                                               (confirmed sstate = confirmed fstate)).
+
+
+   Definition requestManage_precond_In (id : Identity) (fstate sstate : State) :=
+     In id (dom _ _
+                (fun_to_list _ _ idelist finlist Hidefin Hfinfin Hidedec Hfindec (confirmed fstate))).
+
+
+   Definition requestManage_postcond_In (id : Identity) (fstate sstate : State) :=
+     exists token : MToken, freshtoken token /\
+                       (managed sstate = update token (confirmed fstate id) (managed fstate)). 
+     
+
+   Definition requestManage_combined_cond (id : Identity) (fstate sstate : State) :=
+     ( requestManage_precond_In id fstate sstate -> requestManage_postcond_In id fstate sstate) /\
+     (~requestManage_precond_In id fstate sstate -> managed sstate = managed fstate).
+
+
+
+   Definition revoke_precond_In (token : MToken) (ids : set Identity) (fstate sstate : State) :=
+     (In token (dom _ _
+                   (fun_to_list _ _ mtolist finlist Hmtofin Hfinfin Hmtodec Hfindec (managed fstate)))) /\
+     (let fingerprint := managed fstate token in
+      let key := keys fstate fingerprint in
+      Subset ids [identities key] (* Did I misunderstood the Scala or there is something going on in Scala*)).
+
+   Definition dubminus : forall {A B : Type}, (A -> B) -> set A -> (A -> B).
+   Admitted.
+   
+   Definition revoke_postcond_In (token : MToken) (ids : set Identity) (fstate sstate : State) :=
+     confirmed sstate = dubminus (confirmed fstate) ids.
+
+
+   Definition revoke_combined_cond (token : MToken) (ids : set Identity) (fstate sstate : State) :=
+     ( revoke_precond_In token ids fstate sstate -> revoke_postcond_In token ids fstate sstate) /\
+     (~revoke_precond_In token ids fstate sstate -> confirmed sstate = confirmed fstate).
+
+
+   (* Specificate are fairly straight forward. One of things to do would be coming up all the 
+      definitions in Coq, then proving all the definitions ending with combined_cond. *)
+
+   
+     
+   
