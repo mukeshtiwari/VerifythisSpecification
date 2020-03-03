@@ -150,12 +150,12 @@ Section Server.
 
 
 
-  Definition OptionUpdata  {A B C : Type} (f : A -> option (B * C)) (g : A -> option (B * C)) : A -> option (B * C).
-    (* fun z => eq_dec x z 
-                | left _ => Some y
-                | right _ => f z 
-                end. *)
-  Admitted.
+  Definition OptionUpdata  {A B C : Type} (f : A -> option (B * C)) (g : A -> option (B * C)) : A -> option (B * C) :=
+    fun z => match (f z) with 
+          | None => g z
+          | Some v => Some v
+          end.
+    
   
 
   (* Stuck here because of list and function stuff *)
