@@ -1,203 +1,134 @@
+(* 
 Require Import Coq.FSets.FMapList.
-Require Import Coq.Lists.ListSet.
+Require Import Coq.Lists.ListSet *)
 Require Import Coq.Logic.FinFun.
-Require Import List.
-Import ListNotations.
+
+(*Require Import List.
+Import ListNotations. *)
 
 
+Section Settheory.
 
-Section Abstractmap.    
-  (* I need finiteness. *)
-  Variables Key Value : Type.
-  
-  Variables 
-    (keylist : list Key)
-    (vallist : list Value).
+  (* Simulating isabelle set *)
+  Definition set (A : Type) := A -> Prop.
 
-  Variables 
-    (Hkeyfin : forall (k : Key), In k keylist)
-    (Hvalfin : forall (v : Value), In v vallist).
+  Definition In {A : Type} (x : A) (f : set A) : Prop := f x.
 
-  Variables
-    (Hkeydec : forall x y : Key,   {x = y} + {x <> y})
-    (Hvaldec : forall x y : Value, {x = y} + {x <> y}).
-  
+  Definition Union {A : Type} (f g : set A) : set A :=
+    fun x => f x \/ g x.
 
-  
-  (* A better way to model all the Scala function using 
-     Coq map interface 
-     https://coq.inria.fr/library/Coq.FSets.FMapList.html *) 
-  Fixpoint get (k : Key) (maps : list (Key * Value)) : option Value :=
-    match maps with
-    | [] => None
-    | (k', v') :: t => match Hkeydec k' k with
-                     | left _ => Some v'
-                     | right _ => get k t
-                     end
-    end.
+  Definition Intersection {A : Type} (f g : set A) : set A :=
+    fun x => f x /\ g x.
 
-  Fixpoint contains (k : Key) (maps : list (Key * Value)) : bool :=
-    match maps with
-    | [] => false
-    | (k', v') :: t => match Hkeydec k' k with
-                     | left _ => true
-                     | right _ => contains k t
-                     end
-    end.
+  Definition Insert {A : Type} (x : A) (f : set A) : set A :=
+    fun y => y = x \/ In y f.
 
-
-  Definition dom (maps : list (Key * Value)) : list Key :=
-    List.map (fun '(x, y) => x) maps.
-
-  Definition codom (maps : list (Key * Value)) : list Value :=
-    List.map (fun '(x, y) => y) maps. 
-
-  Theorem get_and_contains_true :
-     forall k maps v, get k maps = Some v <-> contains k maps = true.
-  Proof.
-    intros ? ? ?.  split; intro H.
-    generalize dependent maps.
-    induction maps.
-    + cbn. intro. congruence.
-    + cbn. Admitted.
-  
-      
-  Theorem get_and_contains_false :
-    forall k maps, get k maps = None <-> contains k maps = false. 
+  Definition Singleton {A : Type} (x : A) : set A. 
+    (* Now this also can not be implemented withtout 
+       decidable equality. fun y => match dec_eq x y with
+                               | left _ => True
+                               | right _ => False
+                               end. *)
+    refine (fun y => _).
   Admitted.
 
+  (* f is the subset of g *)
+  Definition Subset {A : Type} (f g : set A) : Prop :=
+    forall x, f x = True -> g x = True.
+  
+      
+End Settheory.
+  
+
+Section Server. 
 
   
- (* I need these to interplay between list and function *) 
- Definition list_to_fun : list (Key *  Value) -> (Key  -> Value).  
- Proof.
- Admitted.
-  
- Definition fun_to_list :  (Key -> Value) -> list (Key * Value).
- Admitted.
-
- 
- Axiom list_fun_same :
-   forall (l : list (Key * Value)),  fun_to_list (list_to_fun l) = l.
- 
-
-    
-    
-End Abstractmap.
-
-
-Section Server.
-
   Variables 
-    Keyid Fingerprint Identity 
-    UToken VToken MToken : Type.
-
-  Variables
-    (kidlist : list Keyid)
-    (finlist : list Fingerprint)
-    (idelist : list Identity)
-    (utolist : list UToken)
-    (vtolist : list VToken)
-    (mtolist : list MToken).
-
-  Variables
-    (Hkidfin : forall x, In x kidlist)
-    (Hfinfin : forall x, In x finlist)
-    (Hidefin : forall x, In x idelist)
-    (Hutofin : forall x, In x utolist)
-    (Hvtofin : forall x, In x vtolist)
-    (Hmtofin : forall x, In x mtolist).
-
-   Variables
-    (Hkiddec : forall x y : Keyid      ,  {x = y} + {x <> y})
-    (Hfindec : forall x y : Fingerprint,  {x = y} + {x <> y})
-    (Hidedec : forall x y : Identity   ,  {x = y} + {x <> y})
-    (Hutodec : forall x y : UToken     ,  {x = y} + {x <> y})
-    (Hvtodec : forall x y : VToken     ,  {x = y} + {x <> y})
-    (Hmtodec : forall x y : MToken     ,  {x = y} + {x <> y}).
+    Keyid
+    Fingerprint
+    Identity 
+    UToken
+    VToken
+    MToken : Type.
   
   
-   Record Key : Type := 
+  
+  Record Key : Type := 
     mkKey {
         keyId : Keyid;
         fingerprint : Fingerprint;
-        identities : Identity}.
+        identities : set Identity}.
 
-   Variables
-     (keylist : list Key)
-     (Hkeyfin : forall x : Key, In x keylist)
-     (Hkeydec : forall x y : Key, {x = y} + {x <> y}).
-     
-    
-   (* 
-   Variables 
-     (keys keys' : Fingerprint -> Key)
-     (upload upload' : UToken -> Fingerprint)
-     (pending pending' : VToken -> (Fingerprint * Identity)%type)
-     (confirmed confirmed' : Identity -> Fingerprint)
-     (managed managed' : MToken -> Fingerprint). 
-   
+ 
+
+  (* Wrapping different maps in one record *)
+  Record State : Type :=
+    mkState {
+        keys : Fingerprint -> option Key;
+        upload : UToken -> option Fingerprint;
+        pending : VToken -> option (Fingerprint * Identity);
+        confirmed : Identity -> option Fingerprint;
+        managed : MToken -> option Fingerprint;
+        prev_utokens : set UToken;
+        prev_vtokens : set VToken;
+        prev_mtokens : set MToken}.
 
 
-   
 
-   Definition byFingerprint (fingerprint : Fingerprint) : option Key :=
-     get _ _ Hfindec fingerprint (fun_to_list Fingerprint Key
-                                              finlist keylist Hfinfin Hkeyfin Hfindec
-                                              Hkeydec keys). *)
 
-   Variable freshtoken : forall {A : Type}, A -> Prop. 
+  Definition fresh_utoken (uto : UToken) (s : State) : Prop :=
+    ~In uto (prev_utokens s).
 
-   Variable update : forall {A B : Type}, 
-     A -> B -> (A -> B) -> (A -> B).
 
-   (* Wrapping different maps in one record *)
-   Record State : Type :=
-     mkState {
-         keys : Fingerprint -> Key;
-         upload : UToken -> Fingerprint;
-         pending : VToken -> Fingerprint * Identity;
-         confirmed : Identity -> Fingerprint;
-         managed : MToken -> Fingerprint}. 
+  Definition fresh_vtoken (vto : VToken) (s : State) : Prop :=
+    ~In vto (prev_vtokens s).
+
+
+  Definition fresh_mtoken (mto : MToken) (s : State) : Prop :=
+    ~In mto (prev_mtokens s).
+
+  
+  (* Mimicing the isabelle dom function *)
+  Definition dom {A B : Type} (f : A -> option B) : set A :=
+    fun x => match f x with
+          | None => False
+          | Some x => True
+          end.
+  
+
+  
+  
+  Definition Update {A B : Type} (x : A) (v : B) (f : A -> option B) : A -> option B.
+  (* Now here, we need decidable equality of A. 
+     fun y => match dec_eq x y with
+              | left _ => Some v
+              | right _ => f x *)
+  Admitted.
+  
+  
+  Definition upload_pre (key : Key) (state : State) : Prop :=
+    In (fingerprint key) (dom (keys state)) -> match (keys state) (fingerprint key) with
+                                              | Some k => k = key
+                                              | None => True
+                                              end.
+  
+
+
+  Definition upload_post (key : Key) (state state' : State) : Prop :=
+    exists (token : UToken), fresh_utoken token state /\
+                        (keys   state' = Update (fingerprint key) key (keys state)) /\
+                        (upload state' = Update token (fingerprint key) (upload state)) /\
+                        (prev_utokens state' = Union (prev_utokens state) (Singleton token)).
+                        
+  
          
 
-   
-   Definition upload_state (key : Key) (fstate sstate : State) : Prop :=
-      match contains Fingerprint Key Hfindec (fingerprint key)
-                    (fun_to_list _ _ finlist keylist Hfinfin Hkeyfin Hfindec Hkeydec (keys fstate)) with
-     | false => (upload sstate = upload fstate) /\ (keys sstate = keys fstate)
-     | true =>  exists (token : UToken), freshtoken token /\
-               (keys fstate) (fingerprint key) = key /\
-               (keys sstate = update (fingerprint key) key (keys fstate))
-               /\ (upload sstate = update token (fingerprint key) (upload fstate))
-      end.
-
-
-   (* Am I thinking right? The question that is bothering me is: how are 
-      the two states, fstate and sstate, are related in the beginning of 
-      execution of upload? My hypothesis is they should be same, or 
-      am I misinterpreting the relational style, or I don't have the 
-      enough understanding to ask even meaningful questions? *)
-   
-   Definition upload_precond_In (key : Key) (fstate sstate : State) :=
-     In (fingerprint key)
-        (dom _ _ (fun_to_list _ _ finlist keylist Hfinfin Hkeyfin Hfindec Hkeydec (keys fstate))).
-   
-   Definition upload_postcond_In (key : Key) (fstate sstate : State) :=
-     exists (token : UToken), freshtoken token /\ (keys fstate) (fingerprint key) = key /\
-     (keys sstate = update (fingerprint key) key (keys fstate))
-     /\ (upload sstate = update token (fingerprint key) (upload fstate)).
-
-
-   Definition upload_combined_cond (key : Key) (fstate sstate : State) :=
-     ( upload_precond_In key fstate sstate -> upload_postcond_In key fstate sstate) /\
-     (~upload_precond_In key fstate sstate -> upload sstate = upload fstate
-                                             /\ keys sstate = keys fstate).
+  Definition upload_combined_cond (key : Key) (state state' : State) : Prop :=
+    ( upload_pre key state -> upload_post key state state') /\
+    (~upload_pre key state -> state = state'). 
    
 
-   (* l1 is subset of l2 *)
-   Definition Subset {A : Type} (l1 l2 : set A) :=
-     forall x, In x l1 -> In x l2.
+  
    
    (* In requestVerify function, the only state is changing is 
       pending. It changes when two conditions hold: 
@@ -205,24 +136,37 @@ Section Server.
       2. identities are subset of key.identities where 
          key = keys(upload(from)). 
       Otherwise, there is no change in pending *)
-   
-   Definition requestVerify_precond_In (from : UToken) (idn : set Identity)
-              (fstate sstate : State) :=
-     In from (dom _ _
-                  (fun_to_list
-                     _ _ utolist finlist Hutofin Hfinfin Hutodec Hfindec (upload fstate))) /\
-     Subset idn  ([identities ((keys fstate) ((upload fstate) from))]).
-   
 
-   (* How to union two maps represented as function. One idea is: turn 
-      both them as a list, combine the list and turn the list again back to 
-      function, which, now, represents the union of two maps *)
 
-   Definition Setunion {A B : Type} (f : A -> B) (g : A -> B) := f. (* This is not correct *)
+  Definition requestVerify_precond (from : UToken) (idn : set Identity) (state : State) :=
+    In from (dom (upload state)) /\
+    (match (upload state from) with
+     | None => False
+     | Some fingerprint' => match (keys state fingerprint') with
+                           | None => False
+                           | Some key' => Subset idn (identities key')
+                           end
+     end).
 
-   (* This is for the moment to escapte various implicity definitions *)
-   Definition Listtofun : forall {A B : Type}, list (A * B) ->  (A -> B).
-   Admitted.
+
+
+  Definition OptionUpdata  {A B C : Type} (f : A -> option (B * C)) (g : A -> option (B * C)) : A -> option (B * C).
+    (* fun z => eq_dec x z 
+                | left _ => Some y
+                | right _ => f z 
+                end. *)
+  Admitted.
+  
+
+  (* Stuck here because of list and function stuff *)
+  Definition requestVerify_postcond (from : UToken) (idn : set Identity) (state state' : State) :=
+    exists (f : Identity -> VToken),
+      Injective f /\ (pending state' = 
+
+      
+
+     
+  
                                                                  
 
    
