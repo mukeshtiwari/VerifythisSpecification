@@ -1,0 +1,190 @@
+\documentclass{llncs}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[scaled=0.8]{beramono}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{stmaryrd}
+\usepackage{mathtools}
+\usepackage{proof}
+\usepackage{todonotes}
+\usepackage{xspace}
+
+% \usepackage{minted}
+\usepackage[colorlinks=true,allcolors=blue]{hyperref}
+
+
+\title{Verifying the Security of a PGP Keyserver \\
+       (Abstract for the VerifyThis challenge~2020)}
+\author{Gidon Ernst \inst{1} \and Toby Murray \inst{2} \and Mukesh Tiwari \inst{2}}
+\institute{LMU Munich, \email{gidon.ernst@lmu.de} \and
+  University of Melbourne, Australia, \email{firstname.lastname@unimelb.edu.au}}
+
+\newcommand{\SecCSL}{\textsc{SecCSL}\xspace}
+\newcommand{\SecC}{\textsc{SecC}\xspace}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+We discuss our approach and progress concerning the formal verification of
+the HAGRID PGP keyserver, as part of the VerifyThis 2020 Collaborative
+Long-term Verification Challenge.
+
+\section{Approach}
+
+We have followed an iterative approach to the formalisation of the case study
+and its verification, building on the work of related
+teams~\cite{Ernst_Rieger_20}. Specifically, we took Ernst and Rieger's
+Scala model of the key server as a starting point. This model represents
+the state of the key server as a collection of maps, and has a small
+number of top-level functions that manipulate these maps and simulate
+actions like sending emails.
+
+\subsection{Abstract Specification}
+We began by constructing an abstract specification for the Scala model,
+in the spirit of typical Alloy specifications~\cite{jackson2012software}.
+Here, the state is modelled as a collection of partial functions, each of
+which represents a map in the Scala model. For instance, the \emph{keys}
+map stores the uploaded keys, indexed by their fingerprints; the
+\emph{uploaded} map remembers which keys have been uploaded and is
+indexed by the token that was issued for each; the \emph{prev-tokens} set
+remembers previously issued tokens (in order to specify that newly generated
+tokens should be fresh).
+
+\medskip
+\noindent\begin{tabular}{l}
+\textbf{record} \emph{state} = \\
+\ \ \emph{keys} :: \emph{fingerprint} $\rightharpoonup$ \emph{key} \\
+\ \ \emph{uploaded} :: \emph{token} $\rightharpoonup$ \emph{fingerprint} \\
+\ \ \emph{prev-tokens} :: \emph{token} set\\
+\ \ \ldots
+\end{tabular}
+\medskip
+
+Top-level operations of the
+Scala model are then specified as relations on these states, describing
+how the state after the operation is related to the state before the
+operation. These specifications are carefully written to delineate
+preconditions and postconditions.
+
+For instance, the precondition for the \emph{upload} operation to
+upload a key \emph{k} is a predicate on the pre-state~\emph{s}, and states
+that if a key with the same fingerprint of~\emph{k} has already been uploaded, then that key must be identical to~\emph{k}:
+
+\medskip
+\noindent\begin{tabular}{l}
+  \emph{upload-pre}(\emph{k},\emph{s}) $\equiv$ \emph{k.fingerprint} $\in$ \emph{dom}(\emph{s.keys}) $\implies$ \emph{s.keys}(\emph{k.fingerprint}) = \emph{k} \\
+  \end{tabular}
+\medskip
+
+The postcondition for the \emph{upload} operation requires that a fresh token
+is generated for the key and that the key is added to the \emph{keys} and
+\emph{uploaded} maps.
+
+\newcommand{\union}{\cup}
+\medskip
+\noindent\begin{tabular}{ll}
+\emph{upload-post}(\emph{k},\emph{s},\emph{s'}) $\equiv$ $\exists$ \emph{t}. & \emph{t} $\notin$ \emph{s.prev-tokens}  $\land$ \\
+& \emph{s'.keys} = \emph{s.keys} $\union$ (\emph{k.fingerprint} $\mapsto$ \emph{k})  $\land$ \\
+& \emph{s'.uploaded} = \emph{s.uploaded} $\union$ (\emph{t} $\mapsto$ \emph{k.fingerprint})  $\land$ \\
+& \emph{s'.prev-tokens} = \emph{s.prev-tokens} $\union$ \{\emph{t}\}
+ \\
+  \end{tabular}
+\medskip
+
+Having delineated their pre- and post-conditions, operations are specified
+straightforwardly. For instance, the specification of the \emph{upload}
+operation for uploading a key~\emph{k}, given pre- and post-states
+\emph{s} and~\emph{s'} respectively, is:
+
+\medskip
+\noindent\begin{tabular}{l}
+\emph{upload}(\emph{k},\emph{s},\emph{s'}) $\equiv$ \textbf{if} \emph{upload-pre}(\emph{k},\emph{s}) \textbf{then} \emph{upload-post}(\emph{k},\emph{s},\emph{s'}) \textbf{else} \emph{s' = s}
+  \end{tabular}
+\medskip
+
+We have experimented with encoding this abstract specification in both
+Coq and Isabelle/HOL, and with formalising and proving invariant preservation
+over its operations.
+
+\subsection{Verified Model}
+
+While aiding clarity, the purpose of
+delineating pre- and post-conditions in the abstract specification was to
+serve as a guide for subsequent Hoare logic reasoning about the system.
+Specifically, while currently still in progress, the next step of our approach
+involves constructing a model of the system
+that refines the abstract specification and about which we can reason using
+a Hoare logic style program verifier.
+
+In our approach, we chose to use the prototype \SecC verifier, which
+automates program reasoning in the Hoare style logic Security Concurrent
+Separation Logic (\SecCSL)~\cite{Ernst_Murray_19}. \SecCSL is a variant of
+Concurrent Separation Logic that allows reasoning about expressive
+information flow security policies, in addition to ordinary Hoare logic
+reasoning.
+
+\paragraph{Information Flow Security Policies}
+
+Such policies abound in the key server. For instance, when returning
+results pertaining to the lookup of a key~\emph{k}, data about all other keys
+should be considered private and not revealed. Additionally, however, whether
+a particular identity \emph{id} $\in$ \emph{k.ids}, attached to the
+key~\emph{k} should be revealed depends on whether that identity has been
+confirmed. Thus only confirmed identities for the key~\emph{k} should be
+considered public. The resulting information flow policy for this seemingly
+simple operation is therefore highly state-dependent. \SecCSL and \SecC
+provide natural support for verifying such stateful policies.
+
+
+\paragraph{Dynamic Declassification}
+
+Note, however, that the security policy is not fixed: the action of
+confirming an identity associated with key~\emph{k} effectively
+\emph{declassifies}~\cite{Sabelfeld_Sands_09} the resulting identity,
+making it public with respect to a lookup for key~\emph{k}.
+
+\SecC supports this style of reasoning via \textbf{assume} statements.
+Whereas traditional Hoare logic verifiers are able to assume only
+functional properties, in \SecCSL such assumptions can naturally encompass
+security assertions. For instance the statement ``\mbox{\textbf{assume} (\emph{e}::\texttt{low})}'' literally means ``let us assume that the data contained
+in the expression~\emph{e} is known to the attacker''~\cite{chudnov2018assuming}. 
+
+\paragraph{Ensuring Correct Declassification}
+
+Assume statements are therefore powerful for reasoning about dynamic
+declassification policies. However, we also need to make sure that they
+are not mis-used. For example, it is appropriate to place
+an \textbf{assume} statement at the
+point that an identity~\emph{id} is confirmed for key~\emph{k}, which
+declassifies \emph{id} with respect to lookups of key~\emph{k}. However,
+the \textbf{assume} statement would not be appropriate if it declassified
+\emph{id} with respect to some other key~\emph{k'} or if it did so before
+\emph{id} was confirmed. 
+Therefore, how can we make sure that
+\textbf{assume} statements are used correctly to encode the desired
+declassification policy?
+
+To address this issue, our methodology encodes the declassification policy via an
+extensional predicate that talks just about the program's inputs and outputs
+(i.e.\ not about its internal state), inspired by~\cite{Schoepe_MS_20}.
+Then at the site of each \textbf{assume} statement, we immediately
+precede the \textbf{assume} statement with an \textbf{assert} statement
+to check
+that the extensional declassification predicate holds (i.e.\ allows the
+declassification encoded in the \textbf{assume} statement to occur).
+
+Doing so allows us to verify expressive declassification policies
+naturally via \textbf{assume} statements, free of the risk that we
+inadvertently verify the model against the wrong policy.
+
+
+\bibliographystyle{splncs04}
+\bibliography{references}
+
+\end{document}
+
+%%  LocalWords:  HAGRID PGP keyserver VerifyThis Rieger dom t Hoare
+%%  LocalWords:  mis
