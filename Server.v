@@ -33,6 +33,42 @@ Section Settheory.
   (* f is the subset of g *)
   Definition Subset {A : Type} (f g : set A) :=
     forall a, f a = true -> g a = true. 
+
+   (* Mimicing the isabelle dom function *)
+  Definition dom {A B : Type} (f : A -> option B) : set A :=
+    fun x => match f x with
+          | None => false
+          | Some x => true
+          end.
+  
+
+  Definition ran {A B : Type} (f : A -> option B) : set B.
+    (* This can not be written as boolean function, because 
+       B is not finite. 
+       definition
+       ran :: "('a ⇀ 'b) ⇒ 'b set" where
+       "ran m = {b. ∃a. m a = Some b}"
+       This is not constructive!  
+       Unless I assume A and B are finite types. In that case, 
+   ran  f := List.filter (fun (x, y) => if y = None then false else true ) 
+               (List.zip (l : list l) (list.map f l) *)
+  Admitted. 
+  
+  
+  Definition Update {A B : Type} (Hdec : forall x y : A, {x = y} + {x <> y})
+             (x : A) (v : B) (f : A -> option B) : A -> option B :=
+    fun y => match Hdec x y with
+          | left _ => Some v
+          | right _ => f x
+          end.
+
+ 
+  Definition delete {A B : Type} (x : A) (f : A -> option B) : A -> option B :=
+    fun y => match f x with
+          | None => None 
+          | Some v => None
+          end.
+
   
       
 End Settheory.
@@ -92,23 +128,6 @@ Section Server.
     In mto (prev_mtokens s) = false.
 
   
-  (* Mimicing the isabelle dom function *)
-  Definition dom {A B : Type} (f : A -> option B) : set A :=
-    fun x => match f x with
-          | None => false
-          | Some x => true
-          end.
-  
-
-  
-  
-  Definition Update {A B : Type} (Hdec : forall x y : A, {x = y} + {x <> y})
-             (x : A) (v : B) (f : A -> option B) : A -> option B :=
-    fun y => match Hdec x y with
-          | left _ => Some v
-          | right _ => f x
-          end.
-
   
 
   Lemma fingerprint_key_lemma : forall (key : Key) state,
@@ -139,15 +158,27 @@ Section Server.
                         (upload state' = Update Hutodec token (fingerprint key) (upload state)) /\
                         (prev_utokens state' = Union (prev_utokens state) (Singleton Hutodec token)).
 
-  
-         
 
+  (* Encoding of Gidon's invariant *)
+  (* can I infer if Some k = keys s f -> f \In (dom (keys s)) ? *)       
+  Definition inv (s : State) : Prop :=
+    (forall f k, Some k = keys s f ->  fingerprint k = f) /\
+    (forall f t, Some t = upload s f -> In t (dom (keys s)) = true) /\
+    (forall t f i k', Some (f, i) = pending s t -> In f (dom (keys s)) = true /\
+                                             Some k' = (keys s f) /\
+                                             In i (identities k') = true).
+      
+    
   Definition upload_combined_cond (key : Key) (state state' : State) : Prop :=
     ( upload_pre key state -> upload_post key state state') /\
     (~upload_pre key state -> state = state'). 
    
 
 
+  
+
+
+  
   Lemma upload_state_lemma : forall (from : UToken) state,
     In from (dom (upload state)) = true ->
     exists fingerprint, Some fingerprint = upload state from. 
@@ -177,21 +208,15 @@ Section Server.
   Definition requestVerify_postcond (from : UToken) (idn : Identity -> bool ) (state state' : State) :=
     exists (f : Identity -> VToken),
       Injective f /\ True (* Figure out how to use partial map as a list *).
-
+      
 
   Definition requestVerify_combined_cond (from : UToken) (idn : set Identity) (state state' : State) :=
      ( requestVerify_precond from idn state -> requestVerify_postcond from idn state state') /\
      (~requestVerify_precond from idn state -> pending state' = pending state).
 
   
-
-
-  Definition delete {A B : Type} (x : A) (f : A -> option B) : A -> option B :=
-    fun y => match f x with
-          | None => None 
-          | Some v => None
-          end.
   
+
   
                     
   Definition verify_precond  (token : VToken) (state : State) : Prop :=
