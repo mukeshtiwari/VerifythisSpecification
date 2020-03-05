@@ -176,7 +176,7 @@ Section Server.
   
   Definition requestVerify_postcond (from : UToken) (idn : Identity -> bool ) (state state' : State) :=
     exists (f : Identity -> VToken),
-      Injective f /\ 
+      Injective f /\ True (* Figure out how to use partial map as a list *).
 
 
   Definition requestVerify_combined_cond (from : UToken) (idn : set Identity) (state state' : State) :=
