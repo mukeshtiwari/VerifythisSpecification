@@ -162,11 +162,18 @@ Section Server.
   (* Encoding of Gidon's invariant *)
   (* can I infer if Some k = keys s f -> f \In (dom (keys s)) ? *)       
   Definition inv (s : State) : Prop :=
-    (forall f k, Some k = keys s f ->  fingerprint k = f) /\
-    (forall f t, Some t = upload s f -> In t (dom (keys s)) = true) /\
-    (forall t f i k', Some (f, i) = pending s t -> In f (dom (keys s)) = true /\
-                                             Some k' = (keys s f) /\
-                                             In i (identities k') = true).
+    (forall (f : Fingerprint) (k : Key), Some k = keys s f ->  fingerprint k = f) /\
+    (forall (f : Fingerprint) (t : UToken), Some f = upload s t -> In f (dom (keys s)) = true) /\
+    (forall (t : VToken) (f : Fingerprint) (i : Identity) (k' : Key), 
+        Some (f, i) = pending s t -> In f (dom (keys s)) = true /\
+                                    Some k' = keys s f /\
+                                    In i (identities k') = true) /\
+    (forall (f : Fingerprint) (i : Identity) (k' : Key),
+        Some f = confirmed s i -> In f (dom (keys s)) = true /\
+                                 Some k' = keys s f /\
+                                 In i (identities k') = true) /\
+    (forall (f : Fingerprint) (t : MToken),
+        Some f = managed s t -> In f (dom (keys s)) = true).
       
     
   Definition upload_combined_cond (key : Key) (state state' : State) : Prop :=
