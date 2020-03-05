@@ -1,40 +1,38 @@
-(* 
-Require Import Coq.FSets.FMapList.
-Require Import Coq.Lists.ListSet *)
 Require Import Coq.Logic.FinFun.
-
-(*Require Import List.
-Import ListNotations. *)
 
 
 Section Settheory.
 
   (* Simulating isabelle set *)
-  Definition set (A : Type) := A -> Prop.
+  Definition set (A : Type) := A -> bool.
 
-  Definition In {A : Type} (x : A) (f : set A) : Prop := f x.
+  Definition In {A : Type} (x : A) (f : set A) : bool := f x.
 
   Definition Union {A : Type} (f g : set A) : set A :=
-    fun x => f x \/ g x.
+    fun x => andb (f x)  (g x).
 
   Definition Intersection {A : Type} (f g : set A) : set A :=
-    fun x => f x /\ g x.
+    fun x => orb (f x) (g x).
 
-  Definition Insert {A : Type} (x : A) (f : set A) : set A :=
-    fun y => y = x \/ In y f.
+  Definition Insert {A : Type} (Hdec : forall x y : A, {x = y} + {x <> y})
+             (x : A) (f : set A) : set A :=
+    fun y => match Hdec x y with
+          | left _ => true
+          | right _ => false
+          end.
 
-  Definition Singleton {A : Type} (x : A) : set A. 
-    (* Now this also can not be implemented withtout 
-       decidable equality. fun y => match dec_eq x y with
-                               | left _ => True
-                               | right _ => False
-                               end. *)
-    refine (fun y => _).
-  Admitted.
+  Definition emptyset {A : Type} : set A :=
+    fun _ => false.
+  
+
+  Definition Singleton {A : Type} (Hdec : forall x y : A, {x = y} + {x <> y})
+             (x : A) : set A :=
+    Insert Hdec x emptyset.
+    
 
   (* f is the subset of g *)
-  Definition Subset {A : Type} (f g : set A) : Prop :=
-    forall x, f x = True -> g x = True.
+  Definition Subset {A : Type} (f g : set A) :=
+    forall a, f a = true -> g a = true. 
   
       
 End Settheory.
@@ -51,7 +49,13 @@ Section Server.
     VToken
     MToken : Type.
   
-  
+  Variables
+    (Hfindec : forall x y : Fingerprint, {x = y} + {x <> y})
+    (Hutodec : forall x y : UToken, {x = y} + {x <> y})
+    (Hidedec : forall x y : Identity, {x = y} + {x <> y})
+    (Hmtodec : forall x y : MToken, {x = y} + {x <> y})
+    (Hvtodec : forall x y : VToken, {x = y} + {x <> y}).
+                                                                                    
   
   Record Key : Type := 
     mkKey {
@@ -77,49 +81,64 @@ Section Server.
 
 
   Definition fresh_utoken (uto : UToken) (s : State) : Prop :=
-    ~In uto (prev_utokens s).
+    In uto (prev_utokens s) = false. 
 
 
   Definition fresh_vtoken (vto : VToken) (s : State) : Prop :=
-    ~In vto (prev_vtokens s).
+    In vto (prev_vtokens s) = false.
 
 
   Definition fresh_mtoken (mto : MToken) (s : State) : Prop :=
-    ~In mto (prev_mtokens s).
+    In mto (prev_mtokens s) = false.
 
   
   (* Mimicing the isabelle dom function *)
   Definition dom {A B : Type} (f : A -> option B) : set A :=
     fun x => match f x with
-          | None => False
-          | Some x => True
+          | None => false
+          | Some x => true
           end.
   
 
   
   
-  Definition Update {A B : Type} (x : A) (v : B) (f : A -> option B) : A -> option B.
-  (* Now here, we need decidable equality of A. 
-     fun y => match dec_eq x y with
-              | left _ => Some v
-              | right _ => f x *)
-  Admitted.
+  Definition Update {A B : Type} (Hdec : forall x y : A, {x = y} + {x <> y})
+             (x : A) (v : B) (f : A -> option B) : A -> option B :=
+    fun y => match Hdec x y with
+          | left _ => Some v
+          | right _ => f x
+          end.
+
   
+
+  Lemma fingerprint_key_lemma : forall (key : Key) state,
+    In (fingerprint key) (dom (keys state)) = true ->
+    exists key', Some key' = keys state (fingerprint key). 
+  Proof.
+    intros ? ? Hin.
+    unfold In in *; unfold dom in *.
+    remember (keys state (fingerprint key)) as r.
+    destruct r.
+    exists k. auto.  discriminate Hin.
+  Qed.
   
+                            
+    
+    
   Definition upload_pre (key : Key) (state : State) : Prop :=
-    In (fingerprint key) (dom (keys state)) -> match (keys state) (fingerprint key) with
-                                              | Some k => k = key
-                                              | None => True
-                                              end.
+    In (fingerprint key) (dom (keys state)) = true -> match keys state (fingerprint key) with
+                                                     | Some k => k = key
+                                                     | None => True (* This would not happen. See fingerprint_key_lemma *)
+                                                     end.
   
 
-
+  
   Definition upload_post (key : Key) (state state' : State) : Prop :=
     exists (token : UToken), fresh_utoken token state /\
-                        (keys   state' = Update (fingerprint key) key (keys state)) /\
-                        (upload state' = Update token (fingerprint key) (upload state)) /\
-                        (prev_utokens state' = Union (prev_utokens state) (Singleton token)).
-                        
+                        (keys state' = Update Hfindec (fingerprint key) key (keys state)) /\
+                        (upload state' = Update Hutodec token (fingerprint key) (upload state)) /\
+                        (prev_utokens state' = Union (prev_utokens state) (Singleton Hutodec token)).
+
   
          
 
@@ -128,129 +147,180 @@ Section Server.
     (~upload_pre key state -> state = state'). 
    
 
+
+  Lemma upload_state_lemma : forall (from : UToken) state,
+    In from (dom (upload state)) = true ->
+    exists fingerprint, Some fingerprint = upload state from. 
+  Proof.
+    intros ? ? Hin.
+    unfold In in *; unfold dom in *.
+    remember (upload state from) as r.
+    destruct r.
+    exists f. auto. discriminate Hin.
+  Qed.
   
-   
-   (* In requestVerify function, the only state is changing is 
-      pending. It changes when two conditions hold: 
-      1. from token is in uploaded. 
-      2. identities are subset of key.identities where 
-         key = keys(upload(from)). 
-      Otherwise, there is no change in pending *)
-
-
+  
   Definition requestVerify_precond (from : UToken) (idn : set Identity) (state : State) :=
-    In from (dom (upload state)) /\
+    In from (dom (upload state)) = true /\
     (match (upload state from) with
-     | None => False
+     | None => False (* This would not happen. See the proof upload_state_from *)
      | Some fingerprint' => match (keys state fingerprint') with
-                           | None => False
+                           | None => False (* What can I say about this assuming the first two? *)
                            | Some key' => Subset idn (identities key')
                            end
      end).
 
 
 
-  Definition OptionUpdata  {A B C : Type} (f : A -> option (B * C)) (g : A -> option (B * C)) : A -> option (B * C) :=
-    fun z => match (f z) with 
-          | None => g z
-          | Some v => Some v
-          end.
-    
-  
 
-  (* Stuck here because of list and function stuff *)
-  Definition requestVerify_postcond (from : UToken) (idn : set Identity) (state state' : State) :=
+  
+  Definition requestVerify_postcond (from : UToken) (idn : Identity -> bool ) (state state' : State) :=
     exists (f : Identity -> VToken),
-      Injective f /\ (pending state' = 
+      Injective f /\ 
 
-      
 
-     
+  Definition requestVerify_combined_cond (from : UToken) (idn : set Identity) (state state' : State) :=
+     ( requestVerify_precond from idn state -> requestVerify_postcond from idn state state') /\
+     (~requestVerify_precond from idn state -> pending state' = pending state).
+
   
-                                                                 
-
-   
-   Definition requestVerify_postcond_In (from : UToken) (idn : set Identity)
-              (fstate sstate : State) :=
-     exists (f : Identity -> VToken),
-       Injective f /\ (pending sstate) = Setunion (pending fstate)
-                                                 (Listtofun (List.map (fun h => (f h, (upload fstate from, h))) idn)).
 
 
-   Definition requestVerifty_combined_cond (from : UToken) (idn : set Identity) (fstate sstate : State) :=
-     ( requestVerify_precond_In from idn fstate sstate -> requestVerify_postcond_In from idn fstate sstate) /\
-     (~requestVerify_precond_In from idn fstate sstate -> (pending sstate) = (pending fstate)).
+  Definition delete {A B : Type} (x : A) (f : A -> option B) : A -> option B :=
+    fun y => match f x with
+          | None => None 
+          | Some v => None
+          end.
+  
+  
                     
+  Definition verify_precond  (token : VToken) (state : State) : Prop :=
+    In token (dom (pending state)) = true.
 
-   (* list (Fingerprint * Identity) *)
-   Definition ziplist : forall {A B : Type}, list A -> list B -> list (A * B).
-   Admitted.
+  Lemma some_pending : forall (token : VToken) state ,
+      In token (dom (pending state)) = true ->
+      exists fingerprint identity,  Some (fingerprint, identity) = pending state token.
+  Proof.
+    intros ? ? Hin. unfold In in *.
+    unfold dom in *.
+    remember (pending state token) as r.
+    destruct r. destruct p.
+    exists f, i; auto.
+    discriminate.
+  Qed.
+  
 
-   (* When two types, A and B, have decidable equality, then their pair also has
-      decidable equality *)
-   Definition zipdec : forall (A B : Type), (forall x y : A * B, {x = y} + {x <> y}).
-   Admitted.
+  (* after deleting the token, it will no longer exists in the 
+     return map *)
+  Lemma pending_delete :forall (token : VToken) state,
+      In token (dom (pending state)) = true ->
+      let pending' := delete token (pending state) in
+      In token (dom pending') = false. 
+  Proof.
+    intros ? ? Hin.
+    unfold delete, In in * |- *.
+    unfold dom in * |- *.
+    remember (pending state token) as r.
+    destruct r; auto.
+  Qed.
+  
+  
+    
+    
+  Definition verify_postcond (token : VToken) (state state' : State) :=
+    match pending state token with
+    | None => True (* This would not happend because token is in the domain of pending. See the proof some_pending *)
+    | Some (fingerprint, identity) =>
+      pending state' = delete token (pending state)  /\
+      confirmed state' = Update Hidedec identity fingerprint (confirmed state)
+    end.
+  
 
-   (* forall v : Fingerprint * Identity, In v (ziplist finlist idelist) *)
-   Definition fintype : forall v : Fingerprint * Identity, In v (ziplist finlist idelist).
-   Admitted.
-   
-   Check fun_to_list.
-   Definition verify_precond_In  (token : VToken) (fstate sstate : State) :=
-     In token (dom _ _
-                   (fun_to_list _ _ vtolist (ziplist finlist idelist) Hvtofin
-                                fintype  Hvtodec (zipdec Fingerprint Identity)  (pending fstate))).
-
-   
-   Definition delete : forall {A B : Type}, (A -> B) -> A -> (A -> B).
-   Admitted.
-   
-   Definition verify_postcond_In (token : VToken) (fstate sstate : State) :=
-     let (fingerprint, identity) := (pending fstate token) in
-     (pending sstate) = delete (pending fstate) token (* delete the token *)
-     /\ (confirmed sstate) = update identity fingerprint (confirmed fstate).
+  
      
-     
-   Definition verify_combined_cond (token : VToken) (fstate sstate : State) :=
-     ( verify_precond_In token fstate sstate -> verify_postcond_In token fstate sstate) /\
-     (~verify_precond_In token fstate sstate -> (pending sstate = pending fstate) /\
-                                               (confirmed sstate = confirmed fstate)).
+   Definition verify_combined_cond (token : VToken) (state state': State) :=
+     ( verify_precond token state -> verify_postcond token state state') /\
+     (~verify_precond token state -> (pending state' = pending state) /\
+                                    (confirmed state' = confirmed state)).
 
 
-   Definition requestManage_precond_In (id : Identity) (fstate sstate : State) :=
-     In id (dom _ _
-                (fun_to_list _ _ idelist finlist Hidefin Hfinfin Hidedec Hfindec (confirmed fstate))).
+   
 
 
-   Definition requestManage_postcond_In (id : Identity) (fstate sstate : State) :=
-     exists token : MToken, freshtoken token /\
-                       (managed sstate = update token (confirmed fstate id) (managed fstate)). 
-     
+   Definition requestManage_precond  (id : Identity) (state : State) :=
+     In id (dom (confirmed state)) = true.
+   
 
-   Definition requestManage_combined_cond (id : Identity) (fstate sstate : State) :=
-     ( requestManage_precond_In id fstate sstate -> requestManage_postcond_In id fstate sstate) /\
-     (~requestManage_precond_In id fstate sstate -> managed sstate = managed fstate).
-
-
-
-   Definition revoke_precond_In (token : MToken) (ids : set Identity) (fstate sstate : State) :=
-     (In token (dom _ _
-                   (fun_to_list _ _ mtolist finlist Hmtofin Hfinfin Hmtodec Hfindec (managed fstate)))) /\
-     (let fingerprint := managed fstate token in
-      let key := keys fstate fingerprint in
-      Subset ids [identities key] (* Did I misunderstood the Scala or there is something going on in Scala*)).
-
-   Definition dubminus : forall {A B : Type}, (A -> B) -> set A -> (A -> B).
+   Lemma confirmed_fingerprint : forall (id : Identity) state,
+     In id (dom (confirmed state)) = true -> exists fingerprint, Some fingerprint = confirmed state id.
+   Proof.
+     intros ? ? Hin.
+     unfold In in *;
+       unfold dom in *.
+     remember (confirmed state id) as r.
+     destruct r.
+     exists f.  auto. discriminate Hin.
+   Qed.
+   
+   Definition requestManage_postcond (id : Identity) (state state' : State) :=
+     exists token : MToken, fresh_mtoken token state /\
+                       (match confirmed state id with
+                        | None => True (* This would also not happen. confirmed_fingerprint*)
+                        | Some fingerprint =>
+                           managed state' = Update Hmtodec token fingerprint (managed state)
+                        end) /\
+                        (prev_mtokens state' = Union (prev_mtokens state) (Singleton Hmtodec token)).
+                        
+                       
+                       
+   Lemma token_managed : forall (token : MToken) state,
+     In token (dom (managed state)) = true ->
+     exists fingerprint, Some fingerprint = managed state token. 
+   Proof.
+     intros ? ? Hin.
+     unfold In in *; unfold dom in *.
+     remember (managed state token) as r.
+     destruct r.
+     exists f. auto. discriminate Hin.
+   Qed.
+   
+   Lemma token_managed_keys : forall (token : MToken) state fingerprint, 
+     In token (dom (managed state)) = true -> Some fingerprint = managed state token ->
+     exists k, Some k = keys state fingerprint.
+   Proof.
+     intros ? ? ? Hin Hd.
+     eexists.  unfold In in *; unfold dom in *.
+     remember (managed state token) as r. 
+     destruct r. 
+     (* There is no information in assumption to discharge the goal. *)
    Admitted.
    
-   Definition revoke_postcond_In (token : MToken) (ids : set Identity) (fstate sstate : State) :=
-     confirmed sstate = dubminus (confirmed fstate) ids.
+     
+   Definition revoke_precond (token : MToken) (ids : set Identity) (state : State) :=
+     In token (dom (managed state)) = true /\
+     (match managed state token with
+      | None => True (* This would not happen. See the proof token_managed *)
+      | Some fingerprint =>
+        match keys state fingerprint with
+        | None => False  
+        | Some key => Subset ids (identities key)
+        end
+      end).
+
+  
+
+   Definition dubminus : forall {A B : Type}, (A -> option B) -> set A -> (A -> option B).
+     intros ? ? f g x.
+   Admitted.
+   
+   
+   Definition revoke_postcond (token : MToken) (ids : set Identity) (state state' : State) :=
+     confirmed state' = dubminus (confirmed state) ids.
 
 
-   Definition revoke_combined_cond (token : MToken) (ids : set Identity) (fstate sstate : State) :=
-     ( revoke_precond_In token ids fstate sstate -> revoke_postcond_In token ids fstate sstate) /\
-     (~revoke_precond_In token ids fstate sstate -> confirmed sstate = confirmed fstate).
-
+   Definition revoke_combined_cond (token : MToken) (ids : set Identity) (state state' : State) :=
+     ( revoke_precond token ids state -> revoke_postcond token ids state state') /\
+     (~revoke_precond token ids state -> confirmed state' = confirmed state).
 
    (* Specificate are fairly straight forward. One of things to do would be coming up all the 
       definitions in Coq, then proving all the definitions ending with combined_cond. *)
