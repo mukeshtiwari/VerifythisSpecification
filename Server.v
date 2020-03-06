@@ -141,7 +141,15 @@ Section Server.
     exists k. auto.  discriminate Hin.
   Qed.
   
-                            
+
+  Lemma upload_some : forall k f s, 
+      Some k = keys s f -> In f (dom (keys s)) = true.
+  Proof.
+    intros ? ? ? Hs.
+    unfold In, dom. rewrite <- Hs.
+    auto.
+  Qed.
+  
     
     
   Definition upload_pre (key : Key) (state : State) : Prop :=
@@ -158,9 +166,7 @@ Section Server.
                         (upload state' = Update Hutodec token (fingerprint key) (upload state)) /\
                         (prev_utokens state' = Union (prev_utokens state) (Singleton Hutodec token)).
 
-
-  (* Encoding of Gidon's invariant *)
-  (* can I infer if Some k = keys s f -> f \In (dom (keys s)) ? *)       
+  
   Definition inv (s : State) : Prop :=
     (forall (f : Fingerprint) (k : Key), Some k = keys s f ->  fingerprint k = f) /\
     (forall (f : Fingerprint) (t : UToken), Some f = upload s t -> In f (dom (keys s)) = true) /\
@@ -181,8 +187,29 @@ Section Server.
     (~upload_pre key state -> state = state'). 
    
 
+  Lemma upload_inv :
+    forall k s s', inv s -> upload_combined_cond k s s' -> inv s'.
+  Proof.
+    (* Couple of subtle things: if_split. Decidability does not come for free. 
+       I need to prove that upload_pre is decidable, but for the memoment, 
+       just assert it. First taste of law of excluded middle. *)
+    unfold inv, upload_combined_cond.
+    intros ? ? ? [H1 [H2 [H3 [H4 H5]]]] [Hu1 Hu2].
+    split.
 
-  
+    + intros ? ? Hs.
+      (* decidability is key*)
+      assert (Hin : ~upload_pre k s \/ upload_pre k s).
+      admit.
+      destruct Hin. specialize (Hu2 H).
+      apply H1. rewrite Hu2.  auto.
+
+      
+      
+            
+             
+   
+
 
 
   
