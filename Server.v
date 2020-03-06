@@ -244,7 +244,28 @@ Section Server.
 
       (* Can it be automated using Ltac ? *)
 
-      ++ split. 
+      ++ split.
+         intros ? ? ? ? Hs.
+         destruct Hin.
+
+         (* Precondition does not hold *)
+         specialize (Hu2 H).
+         rewrite  <- Hu2. 
+         apply H3 with t; auto.
+         rewrite <- Hu2 in Hs.
+         auto.
+         
+         (* Precondition holds *)
+         specialize (Hu1 H).
+         unfold upload_post in Hu1.
+         destruct Hu1 as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+         (* No record update is tricky *)
+         
+         
+         
+
+         
+         
   Admitted.
   
   
