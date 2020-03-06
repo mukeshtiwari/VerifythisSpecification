@@ -195,13 +195,12 @@ Section Server.
        just assert it. First taste of law of excluded middle. *)
     unfold inv, upload_combined_cond.
     intros ? ? ? [H1 [H2 [H3 [H4 H5]]]] [Hu1 Hu2].
-    split.
+     (* decidability is key*) 
+    assert (Hin : ~upload_pre k s \/ upload_pre k s).
+    admit.
+    split. 
 
     + intros ? ? Hs.
-      (* decidability is key*) 
-      assert (Hin : ~upload_pre k s \/ upload_pre k s).
-      admit.
-
       (* Precondition does not hold *)
       destruct Hin.
       specialize (Hu2 H). subst.
@@ -217,14 +216,37 @@ Section Server.
       inversion Hs. auto.
       apply H1.  auto.
 
-      
-      
-       
-      
-   
+    + split.
+      intros ? ? Hs.
+      destruct Hin.
 
+      (* Precondtion does not hold *)
+      specialize (Hu2 H).
+      subst. apply H2 with (t := t).
+      auto.
 
+      (* Precondition holds *)
+      specialize (Hu1 H).
+      unfold upload_post in Hu1.
+      destruct Hu1 as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+      rewrite Hu13 in Hs.
+      unfold Update in Hs.
+      destruct (Hutodec tok t).
+      inversion Hs. rewrite Hu12.
+      unfold In, dom.
+      unfold Update.
+      destruct  (Hfindec (fingerprint k) (fingerprint k)).
+      auto. pose proof (n eq_refl). inversion H0.
+      rewrite Hu12. unfold In, dom, Update.
+      destruct (Hfindec (fingerprint k) f). auto.
+      pose proof (H2 f t Hs). unfold In, dom in H0.
+      auto.
 
+      (* Can it be automated using Ltac ? *)
+
+      ++ split. 
+  Admitted.
+  
   
   Lemma upload_state_lemma : forall (from : UToken) state,
     In from (dom (upload state)) = true ->
