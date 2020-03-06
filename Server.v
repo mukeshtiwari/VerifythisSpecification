@@ -59,7 +59,7 @@ Section Settheory.
              (x : A) (v : B) (f : A -> option B) : A -> option B :=
     fun y => match Hdec x y with
           | left _ => Some v
-          | right _ => f x
+          | right _ => f y
           end.
 
  
@@ -198,16 +198,29 @@ Section Server.
     split.
 
     + intros ? ? Hs.
-      (* decidability is key*)
+      (* decidability is key*) 
       assert (Hin : ~upload_pre k s \/ upload_pre k s).
       admit.
-      destruct Hin. specialize (Hu2 H).
-      apply H1. rewrite Hu2.  auto.
+
+      (* Precondition does not hold *)
+      destruct Hin.
+      specialize (Hu2 H). subst.
+      apply H1. auto.
+
+      (* Precondition holds *)
+      specialize (Hu1 H).
+      unfold upload_post in Hu1.
+      destruct Hu1 as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+      rewrite Hu12 in Hs.
+      unfold Update in Hs.
+      destruct (Hfindec (fingerprint k)).
+      inversion Hs. auto.
+      apply H1.  auto.
 
       
       
-            
-             
+       
+      
    
 
 
