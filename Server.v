@@ -59,7 +59,7 @@ Section Settheory.
              (x : A) (v : B) (f : A -> option B) : A -> option B :=
     fun y => match Hdec x y with
           | left _ => Some v
-          | right _ => f x
+          | right _ => f y
           end.
 
  
@@ -141,7 +141,15 @@ Section Server.
     exists k. auto.  discriminate Hin.
   Qed.
   
-                            
+
+  Lemma upload_some : forall k f s, 
+      Some k = keys s f -> In f (dom (keys s)) = true.
+  Proof.
+    intros ? ? ? Hs.
+    unfold In, dom. rewrite <- Hs.
+    auto.
+  Qed.
+  
     
     
   Definition upload_pre (key : Key) (state : State) : Prop :=
@@ -158,15 +166,20 @@ Section Server.
                         (upload state' = Update Hutodec token (fingerprint key) (upload state)) /\
                         (prev_utokens state' = Union (prev_utokens state) (Singleton Hutodec token)).
 
-
-  (* Encoding of Gidon's invariant *)
-  (* can I infer if Some k = keys s f -> f \In (dom (keys s)) ? *)       
+  
   Definition inv (s : State) : Prop :=
-    (forall f k, Some k = keys s f ->  fingerprint k = f) /\
-    (forall f t, Some t = upload s f -> In t (dom (keys s)) = true) /\
-    (forall t f i k', Some (f, i) = pending s t -> In f (dom (keys s)) = true /\
-                                             Some k' = (keys s f) /\
-                                             In i (identities k') = true).
+    (forall (f : Fingerprint) (k : Key), Some k = keys s f ->  fingerprint k = f) /\
+    (forall (f : Fingerprint) (t : UToken), Some f = upload s t -> In f (dom (keys s)) = true) /\
+    (forall (t : VToken) (f : Fingerprint) (i : Identity) (k' : Key), 
+        Some (f, i) = pending s t -> In f (dom (keys s)) = true /\
+                                    Some k' = keys s f /\
+                                    In i (identities k') = true) /\
+    (forall (f : Fingerprint) (i : Identity) (k' : Key),
+        Some f = confirmed s i -> In f (dom (keys s)) = true /\
+                                 Some k' = keys s f /\
+                                 In i (identities k') = true) /\
+    (forall (f : Fingerprint) (t : MToken),
+        Some f = managed s t -> In f (dom (keys s)) = true).
       
     
   Definition upload_combined_cond (key : Key) (state state' : State) : Prop :=
@@ -174,10 +187,87 @@ Section Server.
     (~upload_pre key state -> state = state'). 
    
 
+  Lemma upload_inv :
+    forall k s s', inv s -> upload_combined_cond k s s' -> inv s'.
+  Proof.
+    (* Couple of subtle things: if_split. Decidability does not come for free. 
+       I need to prove that upload_pre is decidable, but for the memoment, 
+       just assert it. First taste of law of excluded middle. *)
+    unfold inv, upload_combined_cond.
+    intros ? ? ? [H1 [H2 [H3 [H4 H5]]]] [Hu1 Hu2].
+     (* decidability is key*) 
+    assert (Hin : ~upload_pre k s \/ upload_pre k s).
+    admit.
+    split. 
 
+    + intros ? ? Hs.
+      (* Precondition does not hold *)
+      destruct Hin.
+      specialize (Hu2 H). subst.
+      apply H1. auto.
+
+      (* Precondition holds *)
+      specialize (Hu1 H).
+      unfold upload_post in Hu1.
+      destruct Hu1 as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+      rewrite Hu12 in Hs.
+      unfold Update in Hs.
+      destruct (Hfindec (fingerprint k)).
+      inversion Hs. auto.
+      apply H1.  auto.
+
+    + split.
+      intros ? ? Hs.
+      destruct Hin.
+
+      (* Precondtion does not hold *)
+      specialize (Hu2 H).
+      subst. apply H2 with (t := t).
+      auto.
+
+      (* Precondition holds *)
+      specialize (Hu1 H).
+      unfold upload_post in Hu1.
+      destruct Hu1 as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+      rewrite Hu13 in Hs.
+      unfold Update in Hs.
+      destruct (Hutodec tok t).
+      inversion Hs. rewrite Hu12.
+      unfold In, dom.
+      unfold Update.
+      destruct  (Hfindec (fingerprint k) (fingerprint k)).
+      auto. pose proof (n eq_refl). inversion H0.
+      rewrite Hu12. unfold In, dom, Update.
+      destruct (Hfindec (fingerprint k) f). auto.
+      pose proof (H2 f t Hs). unfold In, dom in H0.
+      auto.
+
+      (* Can it be automated using Ltac ? *)
+
+      ++ split.
+         intros ? ? ? ? Hs.
+         destruct Hin.
+
+         (* Precondition does not hold *)
+         specialize (Hu2 H).
+         rewrite  <- Hu2. 
+         apply H3 with t; auto.
+         rewrite <- Hu2 in Hs.
+         auto.
+         
+         (* Precondition holds *)
+         specialize (Hu1 H).
+         unfold upload_post in Hu1.
+         destruct Hu1 as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+         (* No record update is tricky *)
+         
+         
+         
+
+         
+         
+  Admitted.
   
-
-
   
   Lemma upload_state_lemma : forall (from : UToken) state,
     In from (dom (upload state)) = true ->
