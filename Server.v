@@ -90,7 +90,9 @@ Section Server.
         fingerprint : Fingerprint;
         identities : set Identity}.
 
- 
+  (* This can be proved because every element in 
+     record Key has decidable equality *)
+  Variable Hkdec : forall x y : Key, {x = y} + {x <> y}.
 
   (* Wrapping different maps in one record *)
   Record State : Type :=
@@ -190,19 +192,30 @@ Section Server.
   Definition upload_combined_cond (key : Key) (state state' : State) : Prop :=
     ( upload_pre key state -> upload_post key state state') /\
     (~upload_pre key state -> state = state'). 
-   
+
+  Lemma dec_upload : forall k s,  ~upload_pre k s \/ upload_pre k s.
+  Proof.
+    intros k s. unfold upload_pre, In, dom.
+    remember (keys s (fingerprint k)) as c.
+    destruct (keys s (fingerprint k)).
+    subst. destruct (Hkdec  k k0).
+    right.  auto.
+    left. intro. firstorder.
+
+    subst. right.  intro. inversion H.
+  Qed.
+  
 
   Lemma upload_inv :
     forall k s s', inv s -> upload_combined_cond k s s' -> inv s'.
   Proof. 
-    (* Couple of subtle things: Decidability does not come for free. 
-       I need to prove that upload_pre is decidable. I am assuming it 
-     because it is trivial/annoying*)
+    (* Couple of subtle things: Decidability does not come for free 
+      in contructive logic. We need to write a decision procedure *)
     unfold inv, upload_combined_cond.
     intros ? ? ? [H1 [H2 [H3 [H4 H5]]]] [Hu1 Hu2].
      (* decidability is key*) 
     assert (Hin : ~upload_pre k s \/ upload_pre k s).
-    admit.
+    apply dec_upload.
     split. 
     
     + intros ? ? Hs.
