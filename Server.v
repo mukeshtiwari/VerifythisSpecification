@@ -91,7 +91,8 @@ Section Server.
         identities : set Identity}.
 
   (* This can be proved because every element in 
-     record Key has decidable equality *)
+     record Key has decidable equality with 
+     function_extensionality of set Identities *)
   Variable Hkdec : forall x y : Key, {x = y} + {x <> y}.
 
   (* Wrapping different maps in one record *)
@@ -303,28 +304,47 @@ Section Server.
              apply Hu2 in H.  subst.
              pose proof (H4 _ _ k'  Hs).
              auto.
-
+             
              apply Hu1 in H.
              unfold upload_post in H.
              destruct H as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
              destruct Hu14 as [H14 [H15 [H16 [H17 [H18]]]]].
-             rewrite H16 in Hs. 
+             rewrite H16 in Hs.
              pose proof (H4 _ _ k' Hs).
+             pose proof (H4 _ _ k Hs).
              destruct H0 as [H0 [H9 H10]].
-             split.  
+             destruct H6 as [H6 [H7 H8]].
+             split.   
              rewrite Hu12. unfold In, dom, Update.
              unfold In, dom in H0. 
              destruct (Hfindec (fingerprint k) f).  
              auto. auto. 
-             split. rewrite Hu12.
-             unfold Update.
-             rewrite H9.
+             split.  rewrite Hu12.
+             unfold Update. 
              destruct (Hfindec (fingerprint k) f).
-             unfold In, dom in H0.
-             pose proof (H1 _ _ H9).
-             
-             
-         
-  Admitted.
+             unfold In in H10.
+             rewrite <- H9 in H7. auto. auto.
+             auto. 
+
+             (* one more to go *)
+             ++++
+               intros ? ? Hs.
+               destruct Hin.
+               apply Hu2 in H.
+               rewrite <- H.
+               rewrite <- H in Hs.
+               apply H5 with (t := t). auto.
+
+
+               apply Hu1 in H. unfold upload_post in H.
+               destruct H as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+               destruct Hu14 as [H14 [H15 [H16 [H17 [H18]]]]].
+               rewrite H17 in Hs.
+               pose proof (H5 _ _ Hs).
+
+               rewrite Hu12.  unfold In, dom, Update.
+               destruct (Hfindec (fingerprint k) f).  
+               auto. auto. 
+  Qed.
   
- 
+End Server.  
