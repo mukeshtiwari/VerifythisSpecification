@@ -51,15 +51,7 @@ Section Settheory.
           | left _ => Some v
           | right _ => f y
           end.
-
  
-  Definition delete {A B : Type} (x : A) (f : A -> option B) : A -> option B :=
-    fun y => match f x with
-          | None => None 
-          | Some v => None
-          end.
-
-  
       
 End Settheory.
   
