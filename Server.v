@@ -3,7 +3,9 @@ Require Import Coq.Logic.FinFun.
 
 Section Settheory.
 
-  (* Simulating isabelle set *)
+  (* Simulating isabelle set; however, it is fundamentally 
+     different because of underlying logic. It's membership is 
+   decidable, i.e. we can if an element x in this set of not. *)
   Definition set (A : Type) := A -> bool.
 
   Definition In {A : Type} (x : A) (f : set A) : bool := f x.
@@ -42,18 +44,6 @@ Section Settheory.
           end.
   
 
-  Definition ran {A B : Type} (f : A -> option B) : set B.
-    (* This can not be written as boolean function, because 
-       B is not finite. 
-       definition
-       ran :: "('a ⇀ 'b) ⇒ 'b set" where
-       "ran m = {b. ∃a. m a = Some b}"
-       This is not constructive!  
-       Unless I assume A and B are finite types. In that case, 
-   ran  f := List.filter (fun (x, y) => if y = None then false else true ) 
-               (List.zip (l : list l) (list.map f l) *)
-  Admitted. 
-  
   
   Definition Update {A B : Type} (Hdec : forall x y : A, {x = y} + {x <> y})
              (x : A) (v : B) (f : A -> option B) : A -> option B :=
@@ -86,6 +76,7 @@ Section Server.
     MToken : Type.
   
   Variables
+    (Hkeydec : forall x y : Keyid, {x = y} + {x <> y})
     (Hfindec : forall x y : Fingerprint, {x = y} + {x <> y})
     (Hutodec : forall x y : UToken, {x = y} + {x <> y})
     (Hidedec : forall x y : Identity, {x = y} + {x <> y})
@@ -153,23 +144,37 @@ Section Server.
     
     
   Definition upload_pre (key : Key) (state : State) : Prop :=
-    In (fingerprint key) (dom (keys state)) = true -> match keys state (fingerprint key) with
-                                                     | Some k => k = key
-                                                     | None => True (* This would not happen. See fingerprint_key_lemma *)
-                                                     end.
+    In (fingerprint key) (dom (keys state)) = true ->
+    match keys state (fingerprint key) with
+    | Some k => k = key
+    | None => True (* This would not happen. See fingerprint_key_lemma *)
+    end.
   
 
-  
+  (*  There is no record update syntax in Coq! Hence, we need to keep 
+   those field which are not chaning *)
   Definition upload_post (key : Key) (state state' : State) : Prop :=
-    exists (token : UToken), fresh_utoken token state /\
-                        (keys state' = Update Hfindec (fingerprint key) key (keys state)) /\
-                        (upload state' = Update Hutodec token (fingerprint key) (upload state)) /\
-                        (prev_utokens state' = Union (prev_utokens state) (Singleton Hutodec token)).
+    exists (token : UToken),
+      fresh_utoken token state /\
+      (keys state' = Update Hfindec (fingerprint key) key (keys state)) /\
+      (upload state' = Update Hutodec token (fingerprint key) (upload state)) /\
+      (prev_utokens state' = Union (prev_utokens state) (Singleton Hutodec token)) /\
+      (* if we have a record update, then we don't need the below ones *)
+      (* Maybe write a Ltac *)
+      (pending state' = pending state) /\
+      (confirmed state' = confirmed state) /\
+      (managed state' = managed state) /\
+      (prev_vtokens state' = prev_vtokens state) /\
+      (prev_mtokens state' = prev_mtokens state). 
+      
+        
 
   
   Definition inv (s : State) : Prop :=
-    (forall (f : Fingerprint) (k : Key), Some k = keys s f ->  fingerprint k = f) /\
-    (forall (f : Fingerprint) (t : UToken), Some f = upload s t -> In f (dom (keys s)) = true) /\
+    (forall (f : Fingerprint) (k : Key),
+        Some k = keys s f ->  fingerprint k = f) /\
+    (forall (f : Fingerprint) (t : UToken),
+        Some f = upload s t -> In f (dom (keys s)) = true) /\
     (forall (t : VToken) (f : Fingerprint) (i : Identity) (k' : Key), 
         Some (f, i) = pending s t -> In f (dom (keys s)) = true /\
                                     Some k' = keys s f /\
@@ -189,17 +194,17 @@ Section Server.
 
   Lemma upload_inv :
     forall k s s', inv s -> upload_combined_cond k s s' -> inv s'.
-  Proof.
-    (* Couple of subtle things: if_split. Decidability does not come for free. 
-       I need to prove that upload_pre is decidable, but for the memoment, 
-       just assert it. First taste of law of excluded middle. *)
+  Proof. 
+    (* Couple of subtle things: Decidability does not come for free. 
+       I need to prove that upload_pre is decidable. I am assuming it 
+     because it is trivial/annoying*)
     unfold inv, upload_combined_cond.
     intros ? ? ? [H1 [H2 [H3 [H4 H5]]]] [Hu1 Hu2].
      (* decidability is key*) 
     assert (Hin : ~upload_pre k s \/ upload_pre k s).
     admit.
     split. 
-
+    
     + intros ? ? Hs.
       (* Precondition does not hold *)
       destruct Hin.
@@ -210,15 +215,17 @@ Section Server.
       specialize (Hu1 H).
       unfold upload_post in Hu1.
       destruct Hu1 as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
-      rewrite Hu12 in Hs.
+      rewrite Hu12 in Hs. 
       unfold Update in Hs.
       destruct (Hfindec (fingerprint k)).
       inversion Hs. auto.
       apply H1.  auto.
 
+      (* Now, the above proof pattern will follow everywhere. 
+         Ltac? *)
     + split.
       intros ? ? Hs.
-      destruct Hin.
+      destruct Hin. 
 
       (* Precondtion does not hold *)
       specialize (Hu2 H).
@@ -232,7 +239,8 @@ Section Server.
       rewrite Hu13 in Hs.
       unfold Update in Hs.
       destruct (Hutodec tok t).
-      inversion Hs. rewrite Hu12.
+      inversion Hs.  
+      rewrite Hu12.
       unfold In, dom.
       unfold Update.
       destruct  (Hfindec (fingerprint k) (fingerprint k)).
@@ -243,28 +251,66 @@ Section Server.
       auto.
 
       (* Can it be automated using Ltac ? *)
-
       ++ split.
          intros ? ? ? ? Hs.
          destruct Hin.
-
+          
          (* Precondition does not hold *)
          specialize (Hu2 H).
          rewrite  <- Hu2. 
          apply H3 with t; auto.
          rewrite <- Hu2 in Hs.
          auto.
-         
+          
          (* Precondition holds *)
          specialize (Hu1 H).
          unfold upload_post in Hu1.
-         destruct Hu1 as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
-         (* No record update is tricky *)
-         
-         
-         
+         destruct Hu1 as
+             [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+         destruct Hu14 as [H14 [H15 [H16 [H17 [H18]]]]].
 
-         
+         rewrite H15 in Hs. pose proof (H3 _ _ _ k' Hs). 
+         destruct H6 as [H19 [H20 H21]].
+         split. rewrite Hu12.
+         unfold In, dom, Update. 
+         destruct (Hfindec (fingerprint k) f). 
+         auto.    unfold not in n.
+         auto.
+
+         split. rewrite Hu12.
+         unfold In, dom, Update. 
+         destruct (Hfindec (fingerprint k) f). 
+         rewrite H20. pose proof (H3 _ _ _ k Hs).
+         destruct H6 as [H6 [H7 H8]]. auto.
+         auto.  auto.
+
+         +++ split.
+             intros ? ? ? Hs.
+             destruct Hin.
+             apply Hu2 in H.  subst.
+             pose proof (H4 _ _ k'  Hs).
+             auto.
+
+             apply Hu1 in H.
+             unfold upload_post in H.
+             destruct H as [tok [Hu11 [Hu12 [Hu13 Hu14]]]].
+             destruct Hu14 as [H14 [H15 [H16 [H17 [H18]]]]].
+             rewrite H16 in Hs. 
+             pose proof (H4 _ _ k' Hs).
+             destruct H0 as [H0 [H9 H10]].
+             split.  
+             rewrite Hu12. unfold In, dom, Update.
+             unfold In, dom in H0. 
+             destruct (Hfindec (fingerprint k) f).  
+             auto. auto. 
+             split. rewrite Hu12.
+             unfold Update.
+             rewrite H9.
+             destruct (Hfindec (fingerprint k) f).
+             unfold In, dom in H0.
+             pose proof (H1 _ _ H9).
+             
+             
          
   Admitted.
   
