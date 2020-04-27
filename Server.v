@@ -16,12 +16,19 @@ Section Settheory.
   Definition Intersection {A : Type} (f g : set A) : set A :=
     fun x => orb (f x) (g x).
 
+
+  (* Software foundation 
+    Definition t_update {A : Type} (m : total_map A)
+                    (x : string) (v : A) :=
+                    fun x' ⇒ if eqb_string x x' then v else m x'.  *)
+
+  
   Definition Insert {A : Type} (Hdec : forall x y : A, {x = y} + {x <> y})
              (x : A) (f : set A) : set A :=
     fun y => match Hdec x y with
           | left _ => true
-          | right _ => false
-          end.
+          | right _ => f y
+          end.  
 
   Definition emptyset {A : Type} : set A :=
     fun _ => false.
@@ -29,7 +36,7 @@ Section Settheory.
 
   Definition Singleton {A : Type} (Hdec : forall x y : A, {x = y} + {x <> y})
              (x : A) : set A :=
-    Insert Hdec x emptyset.
+    Insert Hdec x emptyset. 
     
 
   (* f is the subset of g *)
@@ -51,7 +58,7 @@ Section Settheory.
           | left _ => Some v
           | right _ => f y
           end.
- 
+
       
 End Settheory.
   
